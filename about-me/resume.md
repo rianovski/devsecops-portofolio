@@ -60,7 +60,7 @@ Here’s what I build with every day:
 
 - GitHub: [github.com/rianovski](https://github.com/rianovski)
 - LinkedIn: [linkedin.com/in/yourprofile](https://www.linkedin.com/in/moh-ferian-fakhrul-zain/)
-- Portfolio: [yourwebsite.com](https://github.com/rianovski/devsecops-portofolio)
+- Portfolio: [Portfolio](https://github.com/rianovski/devsecops-portofolio)
 
 ---
 
