@@ -1,0 +1,32 @@
+pr: none
+trigger: none
+
+schedules:
+- cron: "55 14,17,20 * * *"
+  displayName: Run every 10, 1, 4 at every night.
+  branches:
+    include:
+    - main
+  always: true
+
+pool:
+  name: Self-Hosted-Agent
+
+variables:
+  - group: ResourceGroup
+
+stages:
+- stage: Run_Scripts
+  displayName: Run Scripts
+  jobs:
+    - job: StopVM
+      displayName: Stop VMs
+      steps:
+        - checkout: none
+          persistCredentials: true
+
+        - task: CmdLine@2
+          displayName: stop azure-devops-service
+          inputs:
+            script: |
+              curl -X POST -H "Content-Type: application/json" -d '{"subs": "$(ResourceGroup)", "state": "stop"}' -u $(username):$(password) $(endpoint)

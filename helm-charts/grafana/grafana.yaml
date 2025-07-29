@@ -1,0 +1,287 @@
+# grafana-ha.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: grafana
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: grafana
+  namespace: grafana
+spec:
+  replicas: 1
+  serviceName: "grafana"
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      nodeSelector:
+        # node: "agent"
+        node-role.kubernetes.io/master: "true"
+        # pool: "apps"
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: grafana-persistent-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-default-ini-volume
+          mountPath: /etc/grafana
+          readOnly: true
+        env:
+        - name: GF_DEFAULT_PATHS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_DEFAULT_PATHS_CONFIG
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_PASSWORD
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_ADMIN_USER
+        - name: GF_SECURITY_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: GF_SECURITY_SECRET_KEY
+        - name: HTTPS_PROXY
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: HTTPS_PROXY
+        - name: HTTP_PROXY
+          valueFrom:
+            secretKeyRef:
+              name: grafana-secret
+              key: HTTP_PROXY
+      volumes:
+      - name: grafana-default-ini-volume
+        configMap:
+          name: grafana-default-ini
+  volumeClaimTemplates:
+  - metadata:
+      name: grafana-persistent-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    svccontroller.k3s.cattle.io/lbpool: pool3
+  name: grafana
+  namespace: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-secret
+  namespace: grafana
+type: Opaque
+data:
+  GF_DEFAULT_PATHS_CONFIG: BASE64
+  GF_SECURITY_ADMIN_PASSWORD: BASE64
+  GF_SECURITY_ADMIN_USER: BASE64
+  GF_SECURITY_SECRET_KEY: BASE64
+  HTTPS_PROXY: BASE64
+  HTTP_PROXY: BASE64
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-default-ini
+  namespace: grafana
+data:
+  grafana.ini: |
+    app_mode = production
+    instance_name = ${HOSTNAME}
+    force_migration = false
+
+    [analytics]
+    check_for_updates = true
+    [grafana_net]
+    url = https://grafana.net
+    [server]
+    # protocol = https
+    domain = grafana.internal.com
+    root_url = https://%(domain)s/
+    # router_logging = false
+    # static_root_path = public
+    # enable_gzip = true
+
+    [auth]
+    disable_login_form = false
+    disable_signout_menu = false
+    azure_auth_enabled = true
+
+    [log]
+    mode = console
+    [paths]
+    data = /var/lib/grafana/data
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    [database]
+    type = postgres
+    host = localhost:5432
+    name = grafana
+    user = postgres
+    password = password
+    max_idle_conn = 2
+    conn_max_lifetime = 14400
+    ssl_mode = disable
+
+    [auth.azuread]
+    name = Azure AD
+    enabled = true
+    allow_sign_up = true
+    use_refresh_token = true
+    role_attribute_path = default('Viewer')
+    client_id = client_id
+    client_secret = client_secret
+    scopes = openid email profile
+    auth_url = https://login.microsoftonline.com/tenant_id/oauth2/v2.0/authorize
+    token_url = https://login.microsoftonline.com/tenant_id/oauth2/v2.0/token
+    allowed_domains = 
+    allowed_groups =
+    role_attribute_strict = false
+    allow_assign_grafana_admin = false
+    force_use_graph_api = true
+
+    [auth.ldap]
+    enabled = false
+    config_file = /etc/grafana/ldap.toml
+    allow_sign_up = true
+
+    # LDAP background sync (Enterprise only)
+    # At 1 am every day
+    sync_cron = "0 1 * * *"
+    active_sync_enabled = true
+
+    [users]
+    # disable user signup / registration
+    allow_sign_up = false
+
+    # Allow non admin users to create organizations
+    allow_org_create = false
+
+    # Set to true to automatically assign new users to the default organization (id 1)
+    auto_assign_org = true
+
+    # Set this value to automatically add new users to the provided organization (if auto_assign_org above is set to true)
+    auto_assign_org_id = 1
+
+    # Default role new users will be automatically assigned (if auto_assign_org above is set to true)
+    auto_assign_org_role = Viewer
+
+    # Require email validation before sign up completes
+    verify_email_enabled = false
+
+    # Background text for the user field on the login page
+    login_hint = email or username
+    password_hint = password
+
+    # Default UI theme ("dark" or "light")
+    default_theme = dark
+
+    # Default locale (supported IETF language tag, such as en-US)
+    default_locale = en-US
+
+    # Path to a custom home page. Users are only redirected to this if the default home dashboard is used. It should match a frontend route and contain a leading slash.
+    home_page =
+
+    # External user management
+    external_manage_link_url =
+    external_manage_link_name =
+    external_manage_info =
+
+    # Viewers can edit/inspect dashboard settings in the browser. But not save the dashboard.
+    viewers_can_edit = false
+
+    # Editors can administrate dashboard, folders and teams they create
+    editors_can_admin = false
+
+    # The duration in time a user invitation remains valid before expiring. This setting should be expressed as a duration. Examples: 6h (hours), 2d (days), 1w (week). Default is 24h (24 ho>
+    user_invite_max_lifetime_duration = 24h
+
+    # Enter a comma-separated list of usernames to hide them in the Grafana UI. These users are shown to Grafana admins and to themselves.
+    hidden_users =
+    [smtp]
+    enabled = true
+    host = email-smtp.ap-southeast-1.amazonaws.com:587
+    user = user
+    # If the password contains # or ; you have to wrap it with triple quotes. Ex """#password;"""
+    password = password
+    cert_file =
+    key_file =
+    skip_verify = true
+    from_address = devsecops@ai.internal.com
+    from_name = Grafana
+    ehlo_identity =
+    startTLS_policy =
+
+    [emails]
+    welcome_email_on_sign_up = true
+    templates_pattern = emails/*.html, emails/*.txt
+    content_types = text/html
+
+    [dataproxy]
+    row_limit = 1000000000
+
+    [http.proxy]
+    enabled = true
+    http_proxy = http://proxy.internal.com:8080
+    https_proxy = http://proxy.internal.com:8080
+    no_proxy = *.internal.com
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+  namespace: grafana
+  # annotations:
+    # nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - grafana.internal.com
+    secretName: wildcard-astra-tls
+  rules:
+  - host: "grafana.internal.com"
+    http:
+      paths:
+        - pathType: Prefix
+          path: "/"
+          backend:
+            service:
+              name: grafana
+              port:
+                number: 3000
+

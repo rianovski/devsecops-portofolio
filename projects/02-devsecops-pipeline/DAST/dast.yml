@@ -1,0 +1,22 @@
+parameters:
+  appRepository: ''
+  dast: {}
+
+jobs:
+  - job: 'DAST'
+    pool:
+      name: 'azure-devops-agent'
+    timeoutInMinutes: 1440
+    displayName: 'Run AT DAST'
+    steps:    
+        - checkout: none
+        
+        - ${{ each dast in parameters.dast }}:
+          - task: Bash@3
+            displayName: '${{ dast.projectName }}: scan  "${{ dast.projectUrl }}"'
+            inputs:
+                targetType: 'inline'
+                script: |
+                  curl -X POST $(dastUrl) -F "url=${{ dast.projectUrl }}" -F "project=${{ dast.projectName }}"
+                workingDirectory: '$(Build.SourcesDirectory)'
+                continueOnError: true

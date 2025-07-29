@@ -1,0 +1,32 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: devsecops.pipeline
+      type: git
+      name: Default/devsecops.pipeline
+      ref: main
+    - repository: configurations
+      type: git
+      name: Default/configurations
+      ref: main
+    - repository: devsecops.helm
+      type: git
+      name: Default/devsecops.helm
+      ref: Default/SIT
+    - repository: Default
+      type: git
+      name: Default/Default
+      ref: release/dev/SIT
+      trigger:
+        branches:
+          include:
+            - release/dev/SIT
+extends:
+  template: templates/pipeline.yml
+  parameters:
+    helm: Default/SIT
+    env: qa
+    configRepository: configurations
+

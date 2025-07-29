@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: node-red
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-red
+  namespace: node-red
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-red
+  template:
+    metadata:
+      labels:
+        app: node-red
+    spec:
+      # nodeSelector:
+        # kubernetes.io/hostname: a000s-drsentry
+      containers:
+      - name: node-red
+        image: nodered/node-red
+        ports:
+        - containerPort: 1880
+        env:
+        - name: FLOWS
+          value: "/data/flows.json"
+        - name: CREDENTIALS
+          value: "/data/flows_cred.json"
+        volumeMounts:
+        - name: data
+          mountPath: "/data"
+        - name: settings
+          mountPath: "/data/settings.js"
+          subPath: "settings.js"  # Ensure the subPath matches the key in the ConfigMap
+        securityContext:
+          runAsUser: 0
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: node-red-data-pvc
+      - name: settings
+        configMap:
+          name: node-red-config  # ConfigMap name
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-red-service
+  namespace: node-red
+spec:
+  selector:
+    app: node-red
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 1880
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: node-red-data-pvc
+  namespace: node-red
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi  # Adjust the storage size as needed
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-red-config
+  namespace: node-red
+data:
+  settings.js: |
+    module.exports = {
+      adminAuth: {
+          type: "credentials",
+          users: [
+              {
+                  username: "username",
+                  password: "bcrypt-hashed", // Use your bcrypt-hashed password here
+                  permissions: "*"
+              }
+          ]
+      },
+      // httpRoot: "/smart-api",
+      // httpStatic: "/home/nol/node-red-static/",
+      // httpNodeAuth: {user:"username",pass:"bcrypt-hashed"},
+      credentialSecret: "password",
+      editorTheme: {
+          projects: {
+              enabled: false
+          }
+      }
+    };

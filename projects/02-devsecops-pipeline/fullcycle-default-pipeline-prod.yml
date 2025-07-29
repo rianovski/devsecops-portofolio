@@ -1,0 +1,29 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+    - repository: devsecops.pipeline
+      type: git
+      name: Default/devsecops.pipeline
+      ref: main
+    - repository: Production.Configurations
+      type: git
+      name: Default/Production.Configurations
+      ref: main
+    - repository: devsecops.helm
+      type: git
+      name: Default/devsecops.helm
+      ref: Default/SIT
+    - repository: Default
+      type: git
+      name: Default/Default
+      ref: release/dev/PRODUCTION
+      
+extends:
+  template: templates/pipeline.yml
+  parameters:
+    helm: Default/SIT
+    env: prod
+    configRepository: Production.Configurations
+

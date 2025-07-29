@@ -1,0 +1,284 @@
+parameters:
+  helmRepository: ''
+  configRepository: ''
+  env: ''
+  helm: ''
+
+jobs:
+  - job: 'Release'
+    pool:
+      name: 'azure-devops-agent'
+    timeoutInMinutes: 1440
+    displayName: 'Test tools availabity'
+    steps:    
+    - checkout: none
+    - task: CmdLine@2
+      displayName: Test tools availabity
+      inputs:
+        script: |
+            echo ---------------------------------------------------------------------------
+            echo $ yq --version
+            yq --version
+            echo ---------------------------------------------------------------------------
+            echo $ helm version
+            helm version
+            echo ---------------------------------------------------------------------------
+            echo $ kubectl version --short=true
+            kubectl version --short=true
+            echo ---------------------------------------------------------------------------
+            printenv | grep _BUILDID | sort
+
+            echo $(Build.BuildId)
+        workingDirectory: '$(Build.SourcesDirectory)'
+
+  # QA Job
+  - ${{ if eq(parameters.env, 'qa') }}:
+    - job: 'ReleaseQA'
+      pool:
+        name: 'Build-Odysseus'
+      timeoutInMinutes: 1440
+      displayName: 'Release to ${{ upper(parameters.env) }} Env'
+      steps:    
+      - checkout: ${{ parameters.configRepository }}
+      - checkout: ${{ parameters.helmRepository }}
+        fetchDepth: 0  # Needed for fetch and checkout to work
+        clean: true
+        persistCredentials: true
+
+      - task: CmdLine@2
+        displayName: Kubectl Set Config
+        inputs:
+          script: |
+              # Changes kubeconfig
+              mkdir -p ~/.kube
+              rm -r ~/.kube/config
+              sed -i 's/<secret>/$(token)/g' configurations/Default/helm-config/kubeconfig.dev.yaml
+              cat configurations/Default/helm-config/kubeconfig.dev.yaml | tee ~/.kube/config
+              chmod go-r ~/.kube/config
+
+              # setup kubectl contexts
+              kubectl config get-contexts
+              kubectl config use-context tso-Default-aks-dev
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Value & Dry Run
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="configurations/Default/helm-config/values.dev.yaml"
+              # ------------------------------------------------------------------------------------------------
+              helm -n $NAMESPACE ls
+              echo --------------------------------------------------------------------------------------------
+              printenv | grep RELEASE_ARTIFACTS_ | grep BUILDID | sort
+              echo --------------------------------------------------------------------------------------------
+              helm dependency build devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              helm dependency update devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              yq e ".Default.image.tag = \"${BUILD_BUILDID}\"" -i "$VALUES_FILE"
+              echo --------------------------------------------------------------------------------------------
+              echo cat $VALUES_FILE
+              cat $VALUES_FILE
+              echo --------------------------------------------------------------------------------------------
+              helm upgrade --install --debug --dry-run Default devsecops.helm/Default/helm-umbrella --values $VALUES_FILE -n $NAMESPACE;
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Upgrade
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="configurations/Default/helm-config/values.dev.yaml"
+
+              # Add mongo db
+              kubectl apply -f configurations/Default/helm-config/mongo.values.yml
+
+              # Add node-red for Default external processing
+              kubectl apply -f configurations/Default/helm-config/node-red.yml
+              kubectl apply -f configurations/Default/helm-config/node-red.ingress.yml
+              helm repo add grafana https://grafana.github.io/helm-charts
+              helm repo update
+
+              helm upgrade --install promtail grafana/promtail -n loki --create-namespace -f configurations/Default/helm-config/promtail.yml
+
+              # Add Ingress
+              helm repo add bitnami https://charts.bitnami.com/bitnami
+              helm repo update
+              helm upgrade --install ingress-nginx bitnami/nginx-ingress-controller -n ingress-nginx --create-namespace
+              helm upgrade --install loki-distributed grafana/loki-distributed --version 0.80.5 -n loki -f configurations/Default/helm-config/loki.values.yml --create-namespace
+
+              # Install Default
+              helm upgrade --install Default devsecops.helm/Default/helm-umbrella -f $VALUES_FILE -n $NAMESPACE --create-namespace
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+  # UTT Job
+  - ${{ if eq(parameters.env, 'utt') }}:
+    - job: 'ReleaseUTT'
+      pool:
+        name: 'Build-Odysseus'
+      timeoutInMinutes: 1440
+      displayName: 'Release to ${{ upper(parameters.env) }} Env'
+      steps:    
+      - checkout: ${{ parameters.configRepository }}
+      - checkout: ${{ parameters.helmRepository }}
+        fetchDepth: 0  # Needed for fetch and checkout to work
+        clean: true
+        persistCredentials: true
+
+      - task: CmdLine@2
+        displayName: Kubectl Set Config
+        inputs:
+          script: |
+              # Changes kubeconfig
+              mkdir -p ~/.kube
+              rm -r ~/.kube/config
+              sed -i 's/<secret>/$(token)/g' configurations/Default/helm-config/kubeconfig.utt.yaml
+              cat configurations/Default/helm-config/kubeconfig.utt.yaml | tee ~/.kube/config
+              chmod go-r ~/.kube/config
+
+              # setup kubectl contexts
+              kubectl config get-contexts
+              kubectl config use-context tso-Default-aks-stg
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Value & Dry Run
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="configurations/Default/helm-config/values.utt.yaml"
+              # ------------------------------------------------------------------------------------------------
+              helm -n $NAMESPACE ls
+              echo --------------------------------------------------------------------------------------------
+              printenv | grep RELEASE_ARTIFACTS_ | grep BUILDID | sort
+              echo --------------------------------------------------------------------------------------------
+              helm dependency build devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              helm dependency update devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              yq e ".Default.image.tag = \"${BUILD_BUILDID}\"" -i "$VALUES_FILE"
+              echo --------------------------------------------------------------------------------------------
+              echo cat $VALUES_FILE
+              cat $VALUES_FILE
+              echo --------------------------------------------------------------------------------------------
+              helm upgrade --install --debug --dry-run Default devsecops.helm/Default/helm-umbrella --values $VALUES_FILE -n $NAMESPACE;
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Upgrade
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="configurations/Default/helm-config/values.utt.yaml"
+
+              # Add mongo db
+              kubectl apply -f configurations/Default/helm-config/mongo.values.yml
+
+              # Add node-red for Default external processing
+              kubectl apply -f configurations/Default/helm-config/node-red.yml
+              kubectl apply -f configurations/Default/helm-config/node-red.ingress.
+              helm repo add grafana https://grafana.github.io/helm-charts
+              helm repo update
+
+              helm upgrade --install promtail grafana/promtail -n loki --create-namespace -f configurations/Default/helm-config/promtail.yml
+
+              # Add Ingress
+              helm repo add bitnami https://charts.bitnami.com/bitnami
+              helm repo update
+              helm upgrade --install ingress-nginx bitnami/nginx-ingress-controller -n ingress-nginx --create-namespace
+              helm upgrade --install loki-distributed grafana/loki-distributed --version 0.80.5 -n loki -f configurations/Default/helm-config/loki.values.yml --create-namespace
+
+              # Install Default
+              helm upgrade --install Default devsecops.helm/Default/helm-umbrella -f $VALUES_FILE -n $NAMESPACE --create-namespace
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+  # # PRODUCTION Job
+  - ${{ if eq(parameters.env, 'prod') }}:
+    - deployment: ApprovalDeploymentProd
+      displayName: Approval Deployment Prod
+      environment: Default-production
+    - job: 'ReleasePROD'
+      pool:
+        name: 'Build-Odysseus'
+      timeoutInMinutes: 1440
+      displayName: 'Release to ${{ upper(parameters.env) }} Env'
+      steps:    
+      - checkout: ${{ parameters.configRepository }}
+      - checkout: ${{ parameters.helmRepository }}
+        fetchDepth: 0  # Needed for fetch and checkout to work
+        clean: true
+        persistCredentials: true
+
+      - task: CmdLine@2
+        displayName: Kubectl Set Config
+        inputs:
+          script: |
+              # Changes kubeconfig
+              mkdir -p ~/.kube
+              rm -r ~/.kube/config
+              sed -i 's/<secret>/$(token)/g' Production.Configurations/Default/helm-config/kubeconfig.prod.yaml
+              cat Production.Configurations/Default/helm-config/kubeconfig.prod.yaml | tee ~/.kube/config
+              chmod go-r ~/.kube/config
+
+              # setup kubectl contexts
+              kubectl config get-contexts
+              kubectl config use-context tso-Default-aks-prd
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Value & Dry Run
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="Production.Configurations/Default/helm-config/values.prod.yaml"
+              # ------------------------------------------------------------------------------------------------
+              helm -n $NAMESPACE ls
+              echo --------------------------------------------------------------------------------------------
+              printenv | grep RELEASE_ARTIFACTS_ | grep BUILDID | sort
+              echo --------------------------------------------------------------------------------------------
+              helm dependency build devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              helm dependency update devsecops.helm/Default/helm-umbrella/;
+              echo --------------------------------------------------------------------------------------------
+              yq e ".Default.image.tag = \"${BUILD_BUILDID}\"" -i "$VALUES_FILE"
+              echo --------------------------------------------------------------------------------------------
+              echo cat $VALUES_FILE
+              cat $VALUES_FILE
+              echo --------------------------------------------------------------------------------------------
+              helm upgrade --install --debug --dry-run Default devsecops.helm/Default/helm-umbrella --values $VALUES_FILE -n $NAMESPACE;
+          workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Helm Upgrade
+        inputs:
+          script: |
+              export HELM_EXPERIMENTAL_OCI=1
+              export NAMESPACE=Default
+              export VALUES_FILE="Production.Configurations/Default/helm-config/values.prod.yaml"
+
+              # Add mongo db
+              kubectl apply -f Production.Configurations/Default/helm-config/mongo.values.yml
+
+              # Add node-red for Default external processing
+              kubectl apply -f Production.Configurations/Default/helm-config/node-red.yml
+              kubectl apply -f Production.Configurations/Default/helm-config/node-red.ingress.yml              
+              helm repo add grafana https://grafana.github.io/helm-charts
+              helm repo update
+
+              helm upgrade --install promtail grafana/promtail -n loki --create-namespace -f Production.Configurations/Default/helm-config/promtail.yml
+
+              # Add Ingress
+              helm repo add bitnami https://charts.bitnami.com/bitnami
+              helm repo update
+              helm upgrade --install ingress-nginx bitnami/nginx-ingress-controller -n ingress-nginx --create-namespace
+              helm upgrade --install loki-distributed grafana/loki-distributed --version 0.80.5 -n loki -f Production.Configurations/Default/helm-config/loki.values.yml --create-namespace
+
+              # Install Default
+              helm upgrade --install Default devsecops.helm/Default/helm-umbrella -f $VALUES_FILE -n $NAMESPACE --create-namespace
+          workingDirectory: '$(Build.SourcesDirectory)'

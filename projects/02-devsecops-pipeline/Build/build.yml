@@ -1,0 +1,27 @@
+parameters:
+  appRepository: ''
+  configRepository: ''
+  env: ''
+
+jobs:
+  - job: 'BuildAndPush'
+    pool:
+      name: 'azure-devops-agent'
+    timeoutInMinutes: 1440
+    displayName: 'Run Build App Image'
+    steps:    
+    - checkout: ${{ parameters.appRepository }}
+    - checkout: ${{ parameters.configRepository }}
+
+    - task: Docker@2
+      displayName: Build and Push BE
+      inputs:
+        containerRegistry: 'defaultACR'
+        repository: 'Default.${{ parameters.env }}'
+        command: 'buildAndPush'
+        Dockerfile: '$(Build.SourcesDirectory)/Default/Dockerfile'
+        buildContext: '$(Build.SourcesDirectory)/Default'
+        tags: |
+            $(Build.BuildId)
+            latest
+        arguments: '--no-cache'

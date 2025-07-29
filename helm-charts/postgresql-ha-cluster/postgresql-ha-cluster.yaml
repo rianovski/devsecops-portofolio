@@ -1,0 +1,56 @@
+# Install using helm upgrade --install postgresql oci://registry-1.docker.io/bitnamicharts/postgresql-ha -n database -f values.yaml
+
+global:
+  postgresql:
+    username: "postgres"
+    password: "password"
+# witness:
+#   create: "true"
+#   nodeSelector:
+#     node-role.kubernetes.io/master: "true"
+#   resourcesPreset: "2xlarge"
+#   livenessProbe:
+#     enabled: "false"
+#   readinessProbe:
+#     enabled: "false"
+postgresql:
+  maxConnections: 1000
+  resourcesPreset: "2xlarge"
+  nodeSelector:
+    node-role.kubernetes.io/database: "true"
+  replicaCount: 4
+commonLabels:
+  node-role.kubernetes.io/database: "true"
+  svccontroller.k3s.cattle.io/lbpool: "pooldb"
+commonAnnotations:
+service:
+  type: LoadBalancer
+  serviceLabels:
+    svccontroller.k3s.cattle.io/lbpool: "pooldb"
+pgpool:
+  resourcesPreset: "2xlarge"
+  nodeSelector:
+    node-role.kubernetes.io/master: "true"
+  ## Number of child processes pgpool will fork to handle connections
+  numInitChildren: 250   # Adjust this according to your PostgreSQL max_connections
+  childMaxConnections: 10
+  ## Number of pools per child process
+  maxPool: 4
+  ## Client idle limit in seconds (to close idle clients)
+  clientIdleLimit: 60
+  ## Child life time (seconds)
+  childLifeTime: 300
+persistence:
+  size: 300Gi
+backup:
+  enabled: true
+  cronjob:
+    storage:
+      size: 300Gi
+# Persistence settings (enable PVC)
+primary:
+  persistence:
+    enabled: true
+replica:
+  persistence:
+    enabled: true

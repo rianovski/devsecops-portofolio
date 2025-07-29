@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: build-odysseus-ext
+  labels:
+    app: azdevops-agent
+spec:
+  podManagementPolicy: Parallel
+  replicas: 2
+  selector:
+    matchLabels:
+      app: azdevops-agent
+  serviceName: azdevops-agent
+  template:
+    metadata:
+      labels:
+        app: azdevops-agent
+    spec:
+      hostNetwork: false  # Enable host network
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: azdevops-agent
+      subdomain: azure-devops-docker-agent  # Set subdomain to container name
+      # imagePullSecrets:
+      #   - name: acr-secret
+      containers:
+        - name: azure-devops-docker-agent
+          securityContext:
+            privileged: true
+          image: internal-registry.com/agent-azure/base-image:7.0.0
+          imagePullPolicy: Always
+          env:
+            - name: VSS_ALLOW_UNSAFE_BASICAUTH
+              value: "true"
+            - name: AZP_POOL
+              value: "azure-devops-agent"
+            - name: AZP_TOKEN
+              value: "USER_PAT"
+            # - name: HTTP_PROXY
+            #   value: "http://proxy.internal.com:8080"
+            # - name: HTTPS_PROXY
+            #   value: "http://proxy.internal.com:8080"
+            - name: DOCKER_CLI_ACI_TRUST
+              value: "1"
+            - name: AZP_AGENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              memory: "1Gi"
+            limits:
+              memory: "4Gi"
+          volumeMounts:
+            - mountPath: /var/run/docker.sock
+              name: docker-volume
+      volumes:
+        - name: docker-volume
+          hostPath:
+            path: /var/run/docker.sock

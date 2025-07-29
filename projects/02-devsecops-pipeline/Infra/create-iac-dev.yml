@@ -1,0 +1,560 @@
+pr: none
+trigger: none
+# parameters:
+
+resources:
+  repositories:
+  - repository: devsecops.infra
+    name: 'Default/devsecops.infra'
+    type: git
+    ref: master
+
+  - repository: devsecops.pipeline
+    name: 'Default/devsecops.pipeline'
+    type: git
+    ref: main
+
+parameters:
+  - name: environment
+    displayName: environment
+    type: string
+    values:
+      - dev
+      - staging
+      - prod
+  - name: cliendId
+    displayName: cliend Id
+    type: string
+  - name: clientSecret
+    displayName: cliend secret
+    type: string
+  - name: tenantId
+    displayName: tenant Id
+    type: string
+
+pool:
+  name: Agent-tofu
+
+stages:
+- stage: createservicedigiroom
+  displayName: Run OpenTofu for create service digiroom
+  jobs:
+  - job: RunOpenTofuAppService
+    steps:
+    - checkout: devsecops.infra
+      persistCredentials: true
+    
+    - bash: |
+        echo "##vso[task.setvariable variable=${{ parameters.environment }}]env"
+        echo "${{parameters.cliendId}}"
+      displayName: set value credential to secret
+
+    - task: AzureCLI@2
+      displayName: Login Azure
+      inputs:
+        azureSubscription: 'azureResource'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"'
+
+    - task: CmdLine@2
+      displayName: check file '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+      inputs:
+        script: 'ls -al'
+        workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+    
+    # - task: CmdLine@2
+    #   displayName: check file '$(Build.SourcesDirectory)/environment'
+    #   inputs:
+    #     script: 'ls -al'
+    #     workingDirectory: '$(Build.SourcesDirectory)/environment/dev'
+
+    # - task: Bash@3
+    #   displayName: opentofu Installer
+    #   inputs:
+    #     targetType: 'inline'
+    #     script: |
+    #       apt-get update
+    #       apt-get install unzip
+    #       wget --secure-protocol=TLSv1_2 --https-only https://get.opentofu.org/install-opentofu.sh -O install-opentofu.sh
+    #       chmod +x install-opentofu.sh
+    #       ./install-opentofu.sh --install-method standalone
+    #       rm install-opentofu.sh
+    #       tofu --version
+
+    - task: Bash@3
+      displayName: opentofu Init
+      inputs:
+        targetType: 'inline'
+        script: |
+          export ARM_CLIENT_ID="${{parameters.cliendId}}"
+          export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+          export ARM_TENANT_ID="${{parameters.tenantId}}"
+          export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          tofu init
+        workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+
+    - task: Bash@3
+      displayName: opentofu refresh
+      inputs:
+        targetType: 'inline'
+        script: |
+          export ARM_CLIENT_ID="${{parameters.cliendId}}"
+          export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+          export ARM_TENANT_ID="${{parameters.tenantId}}"
+          export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          tofu refresh
+        workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+        
+    # - task: Bash@3
+    #   displayName: terragrunt validate
+    #   inputs:
+    #     targetType: 'inline'
+    #     script: |
+    #       export ARM_CLIENT_ID="${{parameters.cliendId}}"
+    #       export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+    #       export ARM_TENANT_ID="${{parameters.tenantId}}"
+    #       export ARM_SUBSCRIPTION_ID="$(subscriptionId)"
+    #       az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+    #       terragrunt validate -check-variables=false
+    #     workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+    
+    - task: Bash@3
+      displayName: opentofu Plan
+      inputs:
+        targetType: 'inline'
+        script: |
+            export ARM_CLIENT_ID="${{parameters.cliendId}}"
+            export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+            export ARM_TENANT_ID="${{parameters.tenantId}}"
+            export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+            az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            rm -rf .opentofu-cache
+            tofu plan
+        workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+    
+    # - task: Bash@3
+    #   displayName: opentofu Apply
+    #   inputs:
+    #     targetType: 'inline'
+    #     script: |
+    #         export ARM_CLIENT_ID="${{parameters.cliendId}}"
+    #         export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+    #         export ARM_TENANT_ID="${{parameters.tenantId}}"
+    #         export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+    #         az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+    #         az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+    #         tofu apply -auto-approve 
+    #     workingDirectory: '$(Build.SourcesDirectory)/digiroomv2/${{ parameters.environment }}'
+
+- stage: dataCMDBdigiroom
+  displayName: Update data CMDB digiroom
+  dependsOn: createservicedigiroom
+  condition: true
+  jobs:
+  - job: dataCMDB
+    displayName: import CMDB
+    timeoutInMinutes: 1440
+    steps:
+    - checkout: self
+    - checkout: devsecops.infra
+
+    - task: AzureCLI@2
+      displayName: Login Azure
+      inputs:
+          azureSubscription: 'azureResource'
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: 'az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"'
+    
+    - task: Bash@3
+      displayName: copy terraform.tfvars
+      inputs:
+          targetType: 'inline'
+          script: |
+            cp devsecops.infra/digiroomv2/${{ parameters.environment }}/terraform.tfvars devsecops.pipeline/Infra
+          workingDirectory: '$(Build.SourcesDirectory)/'
+    
+    - task: Bash@3
+      displayName: generate kubeconfig
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          cluster_name=$(grep -E '^aks_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel cluster_name adalah: $cluster_name"
+
+          rm -rf ~/.kube/config
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az aks get-credentials --resource-group $rg_name --name $cluster_name --admin
+    
+          cp ~/.kube/config .
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+          vault kv put secrets/app/Default/${{ parameters.environment }}/aks kubeconfig=@config
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    - task: Bash@3
+      displayName: generate acr
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          acr_name=$(grep -E '^acr_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel acr name adalah: $acr_name"
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          acr_output=$(az acr credential show --name $acr_name)
+          
+          username=$(echo $acr_output | jq -r '.username')
+          password=$(echo $acr_output | jq -r '.passwords[0].value')
+          registry="$acr_name.azurecr.io"
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+
+          vault kv put secrets/app/Default/${{ parameters.environment }}/acr username="$username" password="$password" registry="$registry"
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    - task: Bash@3
+      displayName: generate redis
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          redis_name=$(grep -E '^redis_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel redis name adalah: $redis_name"
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "${{parameters.tenantId}}"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          redis_info=$(az redis show --name $redis_name --resource-group $rg_name --query "hostname" -o tsv)
+          
+          echo $redis_info
+
+          HostName=$(echo $redis_info | jq -r '.[0].HostName')
+          PrimaryKey=$(echo $redis_info | jq -r '.[0].PrimaryKey')
+
+          # Check if PrimaryKey is null
+          if [ "$PrimaryKey" == "null" ]; then
+              echo "PrimaryKey is null. Exiting."
+              exit 1
+          fi
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+
+          vault kv put secrets/app/Default/${{ parameters.environment }}/redis HostName="$HostName" password="$PrimaryKey"
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+
+    - task: Bash@3
+      displayName: download tfstate data Infra
+      inputs:
+          targetType: 'inline'
+          script: |
+            export ARM_CLIENT_ID="${{parameters.cliendId}}"
+            export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+            export ARM_TENANT_ID="${{parameters.tenantId}}"
+            export ARM_SUBSCRIPTION_ID="$(subscriptionId)"
+
+            az login --service-principal --tenant ${{parameters.tenantId}} --username ${{parameters.cliendId}} --password ${{parameters.clientSecret}}
+            az account set --subscription "$(subscriptionId)"
+            
+            # Filter for tfstate files and download them
+            az storage blob download-batch --destination . --pattern "*.tfstate" --source $(container_name) --account-name $(storage_account_name)
+
+            echo "Files downloaded successfully."
+          workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    # - task: Bash@3
+    #   displayName: insert tfstate to database
+    #   inputs:
+    #       targetType: 'inline'
+    #       script: |
+    #         sed -i 's/<env>/${{ parameters.environment }}/g' insert-data.py
+    #         sed -i 's/<host_mongo>/$(host_mongo)/g' insert-data.py
+    #         sed -i 's/<pass_mongo>/$(pass_mongo)/g' insert-data.py
+    #         sed -i 's/<user_mongo>/$(user_mongo)/g' insert-data.py
+    #         sed -i 's/<project_id>/$(project_id)/g' insert-data.py
+    #         sed -i 's/<project_name>/$(project_name)/g' insert-data.py
+
+    #         pip install psycopg2-binary
+    #         pip install pymongo
+    #         python3 insert-data.py
+    #       workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+          
+- stage: createserviceosp
+  displayName: Run OpenTofu for create service osp
+  dependsOn: dataCMDBdigiroom
+  jobs:
+  - job: RunOpenTofuAppService
+    steps:
+    - checkout: devsecops.infra
+      persistCredentials: true
+    
+    - bash: |
+        echo "##vso[task.setvariable variable=${{ parameters.environment }}]env"
+      displayName: set value credential to secret
+
+    - task: AzureCLI@2
+      displayName: Login Azure
+      inputs:
+        azureSubscription: 'azureResource'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: 'az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"'
+
+    - task: CmdLine@2
+      displayName: check file '$(Build.SourcesDirectory)'
+      inputs:
+        script: 'ls -al'
+        workingDirectory: '$(Build.SourcesDirectory)'
+    
+    # - task: CmdLine@2
+    #   displayName: check file '$(Build.SourcesDirectory)/environment'
+    #   inputs:
+    #     script: 'ls -al'
+    #     workingDirectory: '$(Build.SourcesDirectory)/environment/dev'
+
+    # - task: Bash@3
+    #   displayName: opentofu Installer
+    #   inputs:
+    #     targetType: 'inline'
+    #     script: |
+    #       apt-get update
+    #       apt-get install unzip
+    #       wget --secure-protocol=TLSv1_2 --https-only https://get.opentofu.org/install-opentofu.sh -O install-opentofu.sh
+    #       chmod +x install-opentofu.sh
+    #       ./install-opentofu.sh --install-method standalone
+    #       rm install-opentofu.sh
+    #       tofu --version
+
+    - task: Bash@3
+      displayName: opentofu Init
+      inputs:
+        targetType: 'inline'
+        script: |
+          export ARM_CLIENT_ID="${{parameters.cliendId}}"
+          export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+          export ARM_TENANT_ID="$(tenantId)"
+          export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          tofu init
+        workingDirectory: '$(Build.SourcesDirectory)/osp-v2/${{ parameters.environment }}'
+
+    - task: Bash@3
+      displayName: opentofu refresh
+      inputs:
+        targetType: 'inline'
+        script: |
+          export ARM_CLIENT_ID="${{parameters.cliendId}}"
+          export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+          export ARM_TENANT_ID="$(tenantId)"
+          export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          tofu refresh
+        workingDirectory: '$(Build.SourcesDirectory)/osp-v2/${{ parameters.environment }}'
+        
+    # - task: Bash@3
+    #   displayName: terragrunt validate
+    #   inputs:
+    #     targetType: 'inline'
+    #     script: |
+    #       export ARM_CLIENT_ID="${{parameters.cliendId}}"
+    #       export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+    #       export ARM_TENANT_ID="$(tenantId)"
+    #       export ARM_SUBSCRIPTION_ID="$(subscriptionId)"
+    #       az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+    #       terragrunt validate -check-variables=false
+    #     workingDirectory: '$(Build.SourcesDirectory)/osp-v2/${{ parameters.environment }}'
+    
+    - task: Bash@3
+      displayName: opentofu Plan
+      inputs:
+        targetType: 'inline'
+        script: |
+            export ARM_CLIENT_ID="${{parameters.cliendId}}"
+            export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+            export ARM_TENANT_ID="$(tenantId)"
+            export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+            az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            rm -rf .opentofu-cache
+            tofu plan
+        workingDirectory: '$(Build.SourcesDirectory)/osp-v2/${{ parameters.environment }}'
+    
+    - task: Bash@3
+      displayName: opentofu Apply
+      inputs:
+        targetType: 'inline'
+        script: |
+            export ARM_CLIENT_ID="${{parameters.cliendId}}"
+            export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+            export ARM_TENANT_ID="$(tenantId)"
+            export ARM_SUBSCRIPTION_ID="fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+            az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+            tofu apply -auto-approve 
+        workingDirectory: '$(Build.SourcesDirectory)/osp-v2/${{ parameters.environment }}'
+
+- stage: dataCMDBosp
+  displayName: Update data CMDB osp
+  dependsOn: createserviceosp
+  condition: true
+  jobs:
+  - job: dataCMDB
+    displayName: import CMDB
+    timeoutInMinutes: 1440
+    steps:
+    - checkout: self
+    - checkout: devsecops.infra
+
+    - task: AzureCLI@2
+      displayName: Login Azure
+      inputs:
+          azureSubscription: 'azureResource'
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: 'az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"'
+    
+    - task: Bash@3
+      displayName: copy terraform.tfvars
+      inputs:
+          targetType: 'inline'
+          script: |
+            cp devsecops.infra/osp/${{ parameters.environment }}/terraform.tfvars devsecops.pipeline/Infra
+          workingDirectory: '$(Build.SourcesDirectory)/'
+    
+    - task: Bash@3
+      displayName: generate kubeconfig
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          cluster_name=$(grep -E '^aks_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel cluster_name adalah: $cluster_name"
+
+          rm -rf ~/.kube/config
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          az aks get-credentials --resource-group $rg_name --name $cluster_name --admin
+    
+          cp ~/.kube/config .
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+          vault kv put secrets/app/Default-osp-v2/${{ parameters.environment }}/aks kubeconfig=@config
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    - task: Bash@3
+      displayName: generate acr
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          acr_name=$(grep -E '^acr_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel acr name adalah: $acr_name"
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+          acr_output=$(az acr credential show --name $acr_name)
+          
+          username=$(echo $acr_output | jq -r '.username')
+          password=$(echo $acr_output | jq -r '.passwords[0].value')
+          registry="$acr_name.azurecr.io"
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+
+          vault kv put secrets/app/Default-osp-v2/${{ parameters.environment }}/acr username="$username" password="$password" registry="$registry"
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    - task: Bash@3
+      displayName: generate redis
+      inputs:
+        targetType: 'inline'
+        script: |
+          rg_name=$(grep -E '^resource_group_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel rg_name adalah: $rg_name"
+          redis_name=$(grep -E '^redis_name\s*=' terraform.tfvars | awk -F'=' '{print $2}' | tr -d '[:space:]' | tr -d '"')
+          echo "Nilai variabel redis name adalah: $redis_name"
+
+          az login --service-principal --username "${{parameters.cliendId}}" --password "${{parameters.clientSecret}}" --tenant "$(tenantId)"
+          az account set --subscription "fbd8d45a-5a62-4b08-bb5e-cc00c71563a5"
+
+          az redis show --name $redis_name --resource-group $rg_name --query "hostName"
+
+          az redis list-keys --name $redis_name --resource-group $rg_name --query "primaryKey"
+
+          redis_info=$(az redis show --name $redis_name --resource-group $rg_name --query "hostname" -o json)
+          
+          echo $redis_info
+
+          HostName=$(echo $redis_info | jq -r '.[0].HostName')
+          PrimaryKey=$(echo $redis_info | jq -r '.[0].PrimaryKey')
+
+          # Check if PrimaryKey is null
+          if [ "$PrimaryKey" == "null" ]; then
+              echo "PrimaryKey is null. Exiting."
+              exit 1
+          fi
+          
+          export VAULT_ADDR=$(kv_url)
+          vault login $(key)
+
+          vault kv put secrets/app/Default-osp-v2/${{ parameters.environment }}/redis HostName="$HostName" password="$PrimaryKey"
+        workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+
+    - task: Bash@3
+      displayName: download tfstate data Infra
+      inputs:
+          targetType: 'inline'
+          script: |
+            export ARM_CLIENT_ID="${{parameters.cliendId}}"
+            export ARM_CLIENT_SECRET="${{parameters.clientSecret}}"
+            export ARM_TENANT_ID="$(tenantId)"
+            export ARM_SUBSCRIPTION_ID="$(subscriptionId)"
+
+            az login --service-principal --tenant $(tenantId) --username ${{parameters.cliendId}} --password ${{parameters.clientSecret}}
+            az account set --subscription "$(subscriptionId)"
+            
+            # Filter for tfstate files and download them
+            az storage blob download-batch --destination . --pattern "*.tfstate" --source $(container_name) --account-name $(storage_account_name)
+
+            ls -al
+
+            echo "Files downloaded successfully."
+          workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'
+    
+    # - task: Bash@3
+    #   displayName: insert tfstate to database
+    #   inputs:
+    #       targetType: 'inline'
+    #       script: |
+    #         sed -i 's/<env>/${{ parameters.environment }}/g' insert-data.py
+    #         sed -i 's/<host_mongo>/$(host_mongo)/g' insert-data.py
+    #         sed -i 's/<pass_mongo>/$(pass_mongo)/g' insert-data.py
+    #         sed -i 's/<user_mongo>/$(user_mongo)/g' insert-data.py
+    #         sed -i 's/<project_id>/$(project_id)/g' insert-data.py
+    #         sed -i 's/<project_name>/$(project_name)/g' insert-data.py
+
+    #         pip install psycopg2-binary
+    #         pip install pymongo
+    #         python3 insert-data.py
+    #       workingDirectory: '$(Build.SourcesDirectory)/devsecops.pipeline/Infra'

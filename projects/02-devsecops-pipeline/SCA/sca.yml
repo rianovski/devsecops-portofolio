@@ -1,0 +1,53 @@
+parameters:
+  appRepository: ''
+
+jobs:
+  - job: 'SCAScan'
+    pool:
+      name: 'azure-devops-agent'
+    timeoutInMinutes: 1440
+    displayName: 'Run Syft Scan'
+    steps:    
+      - checkout: ${{ parameters.appRepository }}
+
+      - task: CmdLine@2
+        displayName: syft scan
+        inputs:
+          script: |
+            sleep 120s
+            echo "# vars specific project"
+            SBOM_OUTPUT_FILE=$(Build.SourcesDirectory)/sbom_syft.json
+            DOCKER_REPOSITORY=registry.internal.com/daicastweb/daicastweb-qa
+            DOCKER_TAG=$(Build.BuildId)
+
+            echo "# Guessing docker build full tag name"
+            DOCKER_IMAGE_TOSCAN=`docker image ls | grep "$DOCKER_REPOSITORY" | grep " $DOCKER_TAG " | head -1 | cut -d" " -f1`:$DOCKER_TAG
+
+            echo "SBOM_OUTPUT_FILE: $SBOM_OUTPUT_FILE"
+            echo "DOCKER_IMAGE_TOSCAN: $DOCKER_IMAGE_TOSCAN"
+            echo "DOCKER_IMAGE_TOSCAN B64: `echo $DOCKER_IMAGE_TOSCAN | base64`"
+            echo "project_id: $SYSTEM_TEAMPROJECTID"
+            echo "build_id: $SYSTEM_DEFINITIONID"
+
+            echo "# download syft"
+            curl -o /tmp/syft -L $(NODERED_BASEURL)/assets/syft_linux_amd64
+            chmod +x /tmp/syft
+
+            echo "# scan docker"
+            /tmp/syft packages "docker:$DOCKER_IMAGE_TOSCAN" --output syft-json=$SBOM_OUTPUT_FILE
+
+            SBOM_OUTPUT_DIR=$(dirname $SBOM_OUTPUT_FILE)
+            cd $SBOM_OUTPUT_DIR
+
+            echo "# head -n5 sbom file"
+            head -n5 sbom_syft.json
+
+            echo "# submit to appsec review"
+            curl --request POST \
+            --url $(NODERED_BASEURL)/api/sbom \
+            --header 'Content-Type: multipart/form-data' \
+            --form "file=@sbom_syft.json" \
+            --form type=TFS_BUILD \
+            --form project_id=$SYSTEM_TEAMPROJECTID \
+            --form build_id=$SYSTEM_DEFINITIONID
+            ls- al

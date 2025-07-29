@@ -1,0 +1,59 @@
+# templates/pipeline.yml
+parameters:
+  - name: helm
+    type: string
+  - name: env
+    type: string
+  - name: configRepository
+    type: string
+
+stages:
+  - stage: Build
+    displayName: "Build Stage"
+    jobs:
+      - template: Build/build.yml@devsecops.pipeline
+        parameters:
+          appRepository: Default
+          configRepository: ${{ parameters.configRepository }}
+          env: ${{ parameters.env }}
+
+  - stage: SCA
+    displayName: "SCA Stage"
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - template: SCA/sca.yml@devsecops.pipeline
+        parameters:
+          appRepository: Default
+
+  - stage: Release
+    displayName: "Release Stage"
+    dependsOn: 
+      - Build
+      - SCA
+    condition: succeeded()
+    jobs:
+      - template: Release/release.yml@devsecops.pipeline
+        parameters:
+          configRepository: ${{ parameters.configRepository }}
+          helmRepository: devsecops.helm
+          env: ${{ parameters.env }}
+          helm: ${{ parameters.helm }}
+
+  - stage: SAST
+    displayName: "SAST Stage"
+    dependsOn: Release
+    condition: succeeded()
+    jobs:
+      - template: SAST/horusec-scan.yml@devsecops.pipeline
+        parameters:
+          appRepository: Default
+
+  - stage: DAST
+    displayName: "DAST Stage"
+    dependsOn: Release
+    condition: succeeded()
+    jobs:
+      - template: DAST/dast.yml@devsecops.pipeline
+        parameters:
+          appRepository: Default

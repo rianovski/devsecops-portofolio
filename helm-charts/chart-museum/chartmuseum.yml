@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: charts-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-path
+  local:
+    path: /opt/chartmuseum/charts # Update this path to the local path where your charts are stored
+  nodeAffinity:  # Add node affinity
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - a000s-drsentry  # Replace this with the hostname of your node
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: charts-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-path
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chartmuseum-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chartmuseum
+  template:
+    metadata:
+      labels:
+        app: chartmuseum
+    spec:
+      containers:
+      - name: chartmuseum
+        image: ghcr.io/helm/chartmuseum:v0.14.0
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DEBUG
+          value: "1"
+        - name: STORAGE
+          value: local
+        - name: STORAGE_LOCAL_ROOTDIR
+          value: /charts
+        volumeMounts:
+        - name: charts-volume
+          mountPath: /charts
+      securityContext:
+        runAsUser: 0  # Run the container as the superuser (root)
+      volumes:
+      - name: charts-volume
+        persistentVolumeClaim:
+          claimName: charts-pvc
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: chartmuseum-service
+  namespace: default
+spec:
+  selector:
+    app: chartmuseum
+  ports:
+  - protocol: TCP
+    port: 2024
+    targetPort: 8080
+  type: LoadBalancer

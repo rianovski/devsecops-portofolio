@@ -1,0 +1,102 @@
+parameters:
+  - name: DD_PRODUCT_NAME
+    type: string
+  - name: DD_ENGAGEMENT_NAME
+    type: string
+  - name: DD_SCAN_TYPE
+    type: string
+  - name: DD_TAGS
+    type: string
+  - name: DD_MINIMUM_SEVERITY
+    type: string
+  - name: DD_REPORT_FILE
+    type: string
+
+steps:
+  - bash: |
+      echo "DD_PRODUCT_NAME: ${{ parameters.DD_PRODUCT_NAME }}"
+      echo "DD_ENGAGEMENT_NAME: ${{ parameters.DD_ENGAGEMENT_NAME }}"
+      echo "DD_SCAN_TYPE: ${{ parameters.DD_SCAN_TYPE }}"
+      echo "DD_TAGS: ${{ parameters.DD_TAGS }}"
+      echo "DD_MINIMUM_SEVERITY: ${{ parameters.DD_MINIMUM_SEVERITY }}"
+      echo "DD_REPORT_FILE: ${{ parameters.DD_REPORT_FILE }}"
+    displayName: 'DD parameters'
+    continueOnError: true
+    
+    # base url & token hardcoded due to variables cant be in this yaml
+  - bash: |
+      node /azp/scripts/defectdojo-ensure-product.js \
+        "http://localhost:8080" \
+        "KEY" \
+        "${{ parameters.DD_PRODUCT_NAME }}" \
+        "${{ parameters.DD_ENGAGEMENT_NAME }}" \
+        "${{ parameters.DD_SCAN_TYPE }}"
+    displayName: 'defectdojo ensure'
+    continueOnError: true
+    
+    # base url & token hardcoded due to variables cant be in this yaml
+  - bash: |
+      SCAN_DATE=`node -e "console.log(new Date().toISOString().substring(0, 10))"`
+      echo curl --request POST \
+        "http://localhost:8080/api/v2/reimport-scan/" \
+        -H "accept: application/json" \
+        -H "Content-Type: multipart/form-data" \
+        -F "active=true" \
+        -F "do_not_reactivate=true" \
+        -F "verified=true" \
+        -F "close_old_findings=true" \
+        -F "product_name=${{ parameters.DD_PRODUCT_NAME }}" \
+        -F "engagement_name=${{ parameters.DD_ENGAGEMENT_NAME }}" \
+        -F "deduplication_on_engagement=true" \
+        -F "push_to_jira=false" \
+        -F "minimum_severity=${{ parameters.DD_MINIMUM_SEVERITY }}" \
+        -F "close_old_findings_product_scope=false" \
+        -F "scan_date=$SCAN_DATE" \
+        -F "create_finding_groups_for_all_findings=true" \
+        -F "tags=${{ parameters.DD_TAGS }}" \
+        -F "file=@${{ parameters.DD_REPORT_FILE }}" \
+        -F "scan_type=${{ parameters.DD_SCAN_TYPE }}"
+    displayName: ' DEBUG defectdojo reimport scan'
+    continueOnError: true
+    
+    # base url & token hardcoded due to variables cant be in this yaml
+  - bash: |
+      SCAN_DATE=`node -e "console.log(new Date().toISOString().substring(0, 10))"`
+
+      curl --request POST \
+        "http://localhost:8080/api/v2/reimport-scan/" \
+        -H "accept: application/json" \
+        -H "Authorization: Token KEY" \
+        -H "Content-Type: multipart/form-data" \
+        -F "active=true" \
+        -F "do_not_reactivate=true" \
+        -F "verified=true" \
+        -F "close_old_findings=true" \
+        -F "product_name=${{ parameters.DD_PRODUCT_NAME }}" \
+        -F "engagement_name=${{ parameters.DD_ENGAGEMENT_NAME }}" \
+        -F "deduplication_on_engagement=true" \
+        -F "push_to_jira=false" \
+        -F "minimum_severity=${{ parameters.DD_MINIMUM_SEVERITY }}" \
+        -F "close_old_findings_product_scope=false" \
+        -F "scan_date=$SCAN_DATE" \
+        -F "create_finding_groups_for_all_findings=true" \
+        -F "tags=${{ parameters.DD_TAGS }}" \
+        -F "file=@${{ parameters.DD_REPORT_FILE }}" \
+        -F "scan_type=${{ parameters.DD_SCAN_TYPE }}" \
+        2>&1 
+    displayName: 'defectdojo reimport scan'
+    continueOnError: true
+
+  - task: CopyFiles@2
+    inputs:
+      sourceFolder: '$(Build.SourcesDirectory)'
+      contents: '${{ parameters.DD_REPORT_FILE }}'
+      targetFolder: '$(Build.ArtifactStagingDirectory)'
+    continueOnError: true
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: '$(Build.ArtifactStagingDirectory)'
+      artifactName: '${{ parameters.DD_SCAN_TYPE }}'
+    displayName: 'publish report for retention'
+    continueOnError: true

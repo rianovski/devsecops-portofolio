@@ -1,0 +1,143 @@
+parameters:
+  appRepository: ''
+  configRepository: ''
+  rootRepository: ''
+
+jobs:
+  - job: 'SAST'
+    pool:
+      name: 'Agent-AppSec'
+    timeoutInMinutes: 1440
+    displayName: 'Run AT SAST'
+
+    steps:
+      - checkout: ${{ parameters.appRepository }}
+      - checkout: ${{ parameters.configRepository }}
+      - checkout: ${{ parameters.rootRepository }}
+      - task: CmdLine@2
+        displayName: Check Repo
+        inputs:
+            script: |
+              ls -al
+            workingDirectory: '$(Build.SourcesDirectory)'
+
+      - task: CmdLine@2
+        displayName: Save Information Repository
+        continueOnError: true
+        inputs:
+            script: |
+              echo "Setting branch repository..."
+              BRANCH=$(git show -s --pretty=%D HEAD | sed -n 's|.*origin/\([^, ]*\).*|\1|p')
+              echo "##vso[task.setvariable variable=BRANCH]$BRANCH"
+
+              echo "Setting app Repository..."
+              echo "${{ parameters.appRepository }}"
+              echo "##vso[task.setvariable variable=appRepository]${{ parameters.appRepository }}"
+
+              echo "Setting Product Name..."
+              project=$(System.TeamProject)
+              collection=$(echo $(System.CollectionUri) | sed -E 's|.*/tfs/([^/]+)/.*|\1|')
+              PRODUCT_NAME="TFS/$collection/$project"
+              echo "##vso[task.setvariable variable=PRODUCT_NAME]$PRODUCT_NAME"
+
+              echo "Setting collection Name..."
+              echo "$(System.CollectionUri)"
+              echo "##vso[task.setvariable variable=COLLECTION_NAME]$(System.CollectionUri)"
+
+              echo "Fetching Repository URL..."
+              REPO_URL=$(git remote get-url origin)
+              echo "##vso[task.setvariable variable=REPO_URL]$REPO_URL"
+
+              echo "Fetching Engagement Name..."
+              APP_REPOSITORY=${{ parameters.appRepository }}
+              BRANCH=$(git show -s --pretty=%D HEAD | sed -n 's|.*origin/\([^, ]*\).*|\1|p')
+              ENGAGEMENT_NAME="REPO/$APP_REPOSITORY/$BRANCH"
+              echo "##vso[task.setvariable variable=ENGAGEMENT_NAME]$ENGAGEMENT_NAME"
+            workingDirectory: '$(Build.SourcesDirectory)/${{ parameters.appRepository }}'
+
+      - script: |
+          echo "BRANCH: $(BRANCH)"
+          echo "ENGAGEMENT_NAME: $(ENGAGEMENT_NAME)"
+          echo "PRODUCT_NAME: $(PRODUCT_NAME)"
+          echo "REPO_URL: $(REPO_URL)"
+        displayName: "Use Variables"
+        continueOnError: true
+      
+
+      - bash: |
+          echo docker run --rm $(HORUSEC_DOCKER) /root/devops-scan.sh "$(REPO_URL)" "$(PAT)" "$(BRANCH)"
+        displayName: 'echo'
+        continueOnError: true
+
+      - task: CmdLine@2
+        displayName: get configfile
+        continueOnError: true
+        inputs:
+            script: |
+                ls -al
+                ls -al devsecops.pipeline/SAST
+                echo "#1 get default config file ok!"
+                cp devsecops.pipeline/SAST/default.json horusec-config.json
+                echo            
+             
+                echo "#2 get custom config file if available"
+                BASENAME=`echo "$(REPO_URL)" | sed -e 's/[^A-Za-z0-9._-]/_/g'`
+                CUSTOM_CONFIGFILE=$BASENAME.json
+                echo "- custom: $CUSTOM_CONFIGFILE"
+             
+                if [ ! -f $CUSTOM_CONFIGFILE ]
+                then
+                  echo "- custom config doesnt exist. use default one"
+                else
+                  echo "- custom config exist. use costum one!"
+                  cp $CUSTOM_CONFIGFILE horusec-config.json
+                fi
+            workingDirectory: '$(Build.SourcesDirectory)'
+        
+      - task: CmdLine@2
+        displayName: checkfile
+        continueOnError: true
+        inputs:
+          script: |
+              ls -al
+              cat horusec-config.json
+          workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+
+      - bash: |
+          mkdir report
+
+          docker run --rm \
+            -v $PWD/horusec-config.json:/root/horusec-config.json.orig:ro \
+            -v $PWD/report:/report:z \
+            "$(HORUSEC_DOCKER)" \
+            /root/devops-scan.sh "$(REPO_URL)" "$(PAT)" "$(BRANCH)"
+
+          cat report/horusec.json 
+        displayName: 'Scan $(REPO_URL)'
+        continueOnError: true
+      
+      - bash: |
+          cat report/horusec.log
+        displayName: 'cek log'
+        continueOnError: true
+      
+      - bash: |
+          cat report/horusec-config.json
+        displayName: 'cek config'
+        continueOnError: true
+      
+      - bash: |
+          head -n50 report/horusec.json 
+        displayName: 'check head report/horusec.json'
+        continueOnError: true
+      
+
+      - template: './import-defectdojo.yml'
+        parameters:
+          DD_PRODUCT_NAME: "$(PRODUCT_NAME)"
+          DD_ENGAGEMENT_NAME: "$(ENGAGEMENT_NAME)"
+          DD_SCAN_TYPE: "Horusec Scan"
+          DD_TAGS: "horusec"
+          DD_MINIMUM_SEVERITY: "Info" # for horusec is Info
+          DD_REPORT_FILE: "report/horusec.json"
