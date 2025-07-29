@@ -4,10 +4,10 @@ Hi! I'm Moh. Ferian Fakhrul Zain (Rian), a DevSecOps Engineer passionate about a
 
 ## 🔧 Tools & Technologies
 - Kubernetes (k3s, AKS)
-- Azure DevOps, GitHub Actions
-- Trivy, SonarQube, Falco, OPA
+- Azure DevOps, Jenkins
+- Trivy, SonarQube
 - Grafana, Loki, Prometheus
-- n8n, Node-RED
+- n8n, Node-RED, Harbor, Helm
 - Terraform, Ansible
 
 ## 📂 Featured Projects
