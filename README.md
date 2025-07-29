@@ -73,7 +73,7 @@ Python scripts to manage and automate Azure DevOps, HashiCorp Vault:
 | ☁ Cloud        | Azure, AWS                                           |
 | 📦 Containers  | Docker, Harbor, k3s, RKE, RKE2, AKS                  |
 | 🔁 CI/CD       | Azure DevOps, GitHub Actions                         |
-| 🛡 Security     | Trivy, SonarQube, Falco, OPA                         |
+| 🛡 Security     | Trivy, SonarQube                                    |
 | 📈 Monitoring  | Grafana, Loki, Prometheus                            |
 | ⚙ Automation  | Bash, PowerShell, Python, Helm, Terraform, n8n       |
 
